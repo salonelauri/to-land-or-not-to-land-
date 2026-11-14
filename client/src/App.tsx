@@ -152,7 +152,7 @@ export default function App() {
   return (
     <ViewModeContext.Provider value={viewMode}>
     <div
-      className="h-screen w-screen bg-black text-white flex flex-col font-sans relative overflow-hidden select-none"
+      className="fixed inset-0 w-full h-full bg-black text-white flex flex-col font-sans overflow-hidden select-none"
       style={{ overflow: 'clip' }}
     >
       {/* Background Monochrome Starfield */}
