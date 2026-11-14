@@ -205,115 +205,102 @@ function drawLunarBase(ctx: CanvasRenderingContext2D, width: number, height: num
   }
 }
 
-// Generate photorealistic procedural Moon surface texture
-function createLunarTexture(): THREE.CanvasTexture {
+// 1. Natural Lunar Texture: loads authentic NASA LRO LROC Polar 4K Photographic Mosaic
+function loadNaturalLunarTexture(onLoad?: (texture: THREE.Texture) => void): THREE.Texture {
+  const textureLoader = new THREE.TextureLoader();
+  return textureLoader.load(
+    '/textures/lroc_color_poles_4k.jpg',
+    (tex) => {
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      if (onLoad) onLoad(tex);
+    },
+    undefined,
+    () => {
+      // Fallback to standard 2K map if 4K takes longer or fails
+      textureLoader.load('/textures/lroc_color_2k.jpg', (fallbackTex) => {
+        fallbackTex.wrapS = THREE.RepeatWrapping;
+        fallbackTex.wrapT = THREE.ClampToEdgeWrapping;
+        if (onLoad) onLoad(fallbackTex);
+      });
+    }
+  );
+}
+
+// 2. LOLA Bump Map: loads authentic NASA LOLA elevation bump map for authentic crater rim relief
+function loadLolaBumpMap(onLoad?: (texture: THREE.Texture) => void): THREE.Texture {
+  const textureLoader = new THREE.TextureLoader();
+  return textureLoader.load(
+    '/textures/lola_bump_2k.jpg',
+    (tex) => {
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      if (onLoad) onLoad(tex);
+    }
+  );
+}
+
+// 3. LOLA Slope Heatmap Texture: composites authentic NASA LRO LROC photographic surface with
+// authentic NASA LOLA slope overlay (<5° safe green, 5-15° yellow, >15° red) and polar coordinate rings!
+function createCompositeLolaSlopeTexture(onLoad?: (texture: THREE.Texture) => void): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 2048;
   canvas.height = 1024;
   const ctx = canvas.getContext('2d')!;
 
+  // Immediate procedural preview while images load
   drawLunarBase(ctx, canvas.width, canvas.height, false);
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  return texture;
-}
+  const canvasTexture = new THREE.CanvasTexture(canvas);
+  canvasTexture.wrapS = THREE.RepeatWrapping;
+  canvasTexture.wrapT = THREE.ClampToEdgeWrapping;
 
-// Generate Bump Map for Three.js 3D depth and specular shadows
-function createLunarBumpMap(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d')!;
+  const baseImg = new Image();
+  baseImg.src = '/textures/lroc_color_poles_4k.jpg';
+  baseImg.onload = () => {
+    const slopeImg = new Image();
+    slopeImg.src = '/textures/lola_slope_overlay_2k.png';
+    slopeImg.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  drawLunarBase(ctx, canvas.width, canvas.height, true);
+      // 1. Draw authentic photographic Moon surface
+      ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  return texture;
-}
+      // 2. Drape authentic NASA LOLA slope overlay (<5° green, 5-15° yellow, >15° red)
+      ctx.drawImage(slopeImg, 0, 0, canvas.width, canvas.height);
 
-// Generate NASA LOLA Slope Heatmap Overlay Texture (Green <5°, Yellow 5-15°, Red >15°)
-// Matches NASA MoonTrek: translucent overlay draped on top of visible craters!
-function createLolaSlopeTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 2048;
-  canvas.height = 1024;
-  const ctx = canvas.getContext('2d')!;
+      // 3. Draw NASA MoonTrek-style Amber Polar Cartographic Grid Rings
+      ctx.save();
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([6, 6]);
 
-  // 1. Draw base lunar surface with craters and topography first
-  drawLunarBase(ctx, canvas.width, canvas.height, false);
+      const southPoleY = 1000;
+      const southPoleX = 1024;
+      [40, 85, 140, 200].forEach(radius => {
+        ctx.beginPath();
+        ctx.ellipse(southPoleX, southPoleY, radius * 1.8, radius, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      });
 
-  // 2. Apply Semi-Transparent LOLA Slope Overlay (alpha 0.52 so craters shine through)
-  ctx.save();
-  ctx.globalAlpha = 0.55;
+      // Radial meridians converging to pole
+      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+        ctx.beginPath();
+        ctx.moveTo(southPoleX, southPoleY);
+        ctx.lineTo(
+          southPoleX + Math.cos(angle) * 300,
+          southPoleY + Math.sin(angle) * 180
+        );
+        ctx.stroke();
+      }
+      ctx.restore();
 
-  // Broad moderate slope highland baseline (amber/yellow-green)
-  const highlandOverlay = ctx.createLinearGradient(0, 700, 0, canvas.height);
-  highlandOverlay.addColorStop(0, 'rgba(234, 179, 8, 0.45)');   // Golden yellow (5-15°)
-  highlandOverlay.addColorStop(0.7, 'rgba(245, 158, 11, 0.55)'); // Amber slope
-  highlandOverlay.addColorStop(1, 'rgba(220, 38, 38, 0.45)');    // Polar rim slopes
-  ctx.fillStyle = highlandOverlay;
-  ctx.fillRect(0, 700, canvas.width, canvas.height - 700);
+      canvasTexture.needsUpdate = true;
+      if (onLoad) onLoad(canvasTexture);
+    };
+  };
 
-  // Large Smooth Basaltic Plains & Flat Basins (Emerald Green <5° Safe Zone)
-  const safeFlatZones = [
-    { x: 1080, y: 390, rx: 140, ry: 100 }, // Mare Tranquillitatis (Apollo 11)
-    { x: 780, y: 340, rx: 250, ry: 190 },  // Oceanus Procellarum
-    { x: 1040, y: 310, rx: 110, ry: 80 },  // Mare Serenitatis
-    { x: 1240, y: 370, rx: 80, ry: 65 },   // Mare Crisium
-    // Flat South Pole crater floors and plateaus (<5° safe zones like in MoonTrek photo)
-    { x: 800, y: 920, rx: 160, ry: 90 },   // Western polar plain (deep green patch)
-    { x: 1240, y: 930, rx: 150, ry: 85 },  // Eastern polar plain (green patch)
-    { x: 1024, y: 980, rx: 45, ry: 25 },   // Shackleton ridge flat corridor
-  ];
-
-  safeFlatZones.forEach(z => {
-    const grad = ctx.createRadialGradient(z.x, z.y, 10, z.x, z.y, Math.max(z.rx, z.ry));
-    grad.addColorStop(0, '#10b981');   // Vivid Emerald Green
-    grad.addColorStop(0.7, '#059669'); // Deep Green
-    grad.addColorStop(1, 'rgba(5, 150, 105, 0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(z.x, z.y, z.rx, z.ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  // Steep Crater Walls & Escarpments (Red/Orange >15° Hazard Zones like in MoonTrek photo)
-  const steepHazardZones = [
-    // South Pole crater rim drop-offs (vivid red & orange rims)
-    { x: 1024, y: 994, rx: 32, ry: 20 }, // Shackleton inner wall
-    { x: 1180, y: 970, rx: 36, ry: 24 }, // Nobile crater inner walls
-    { x: 1060, y: 960, rx: 30, ry: 18 }, // Malapert massif steep drops
-    { x: 920, y: 980, rx: 28, ry: 16 },  // Connecting ridge steep flanks
-    { x: 970, y: 965, rx: 24, ry: 16 },  // de Gerlache crater rim
-    { x: 1080, y: 990, rx: 25, ry: 16 }, // Faustini crater wall
-    { x: 1120, y: 940, rx: 30, ry: 18 }, // Amundsen crater wall
-    { x: 990, y: 940, rx: 22, ry: 14 },  // Shoemaker crater rim
-    // Highlands escarpments
-    { x: 1400, y: 500, rx: 220, ry: 140 },
-    { x: 400, y: 400, rx: 180, ry: 130 },
-  ];
-
-  steepHazardZones.forEach(z => {
-    const grad = ctx.createRadialGradient(z.x, z.y, 4, z.x, z.y, Math.max(z.rx, z.ry));
-    grad.addColorStop(0, '#ef4444');   // Bright Red Hazard
-    grad.addColorStop(0.6, '#f97316'); // Orange Warning
-    grad.addColorStop(1, 'rgba(249, 115, 22, 0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(z.x, z.y, z.rx, z.ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  ctx.restore();
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  return texture;
+  return canvasTexture;
 }
 
 export const LunarGlobe3D: React.FC<LunarGlobe3DProps> = ({
@@ -352,9 +339,9 @@ export const LunarGlobe3D: React.FC<LunarGlobe3DProps> = ({
   const animTargetControlsTarget = useRef<THREE.Vector3 | null>(null);
 
   // Textures
-  const naturalTextureRef = useRef<THREE.CanvasTexture | null>(null);
-  const slopeTextureRef = useRef<THREE.CanvasTexture | null>(null);
-  const bumpTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const naturalTextureRef = useRef<THREE.Texture | null>(null);
+  const slopeTextureRef = useRef<THREE.Texture | null>(null);
+  const bumpTextureRef = useRef<THREE.Texture | null>(null);
 
   // Fly camera to a specific landing site
   const flyToSite = useCallback((site: CandidateSite) => {
@@ -438,18 +425,39 @@ export const LunarGlobe3D: React.FC<LunarGlobe3DProps> = ({
     earthshineLight.position.set(-10, -2, -5);
     scene.add(earthshineLight);
 
-    // 6. Textures & Moon Sphere
-    naturalTextureRef.current = createLunarTexture();
-    slopeTextureRef.current = createLolaSlopeTexture();
-    bumpTextureRef.current = createLunarBumpMap();
+    // 6. Textures & Moon Sphere with authentic NASA datasets
+    naturalTextureRef.current = loadNaturalLunarTexture((tex) => {
+      if (!showSlopeHeatmap && moonMeshRef.current) {
+        const mat = moonMeshRef.current.material as THREE.MeshStandardMaterial;
+        mat.map = tex;
+        mat.needsUpdate = true;
+      }
+    });
+
+    bumpTextureRef.current = loadLolaBumpMap((tex) => {
+      if (moonMeshRef.current) {
+        const mat = moonMeshRef.current.material as THREE.MeshStandardMaterial;
+        mat.bumpMap = tex;
+        mat.bumpScale = 0.08;
+        mat.needsUpdate = true;
+      }
+    });
+
+    slopeTextureRef.current = createCompositeLolaSlopeTexture((tex) => {
+      if (showSlopeHeatmap && moonMeshRef.current) {
+        const mat = moonMeshRef.current.material as THREE.MeshStandardMaterial;
+        mat.map = tex;
+        mat.needsUpdate = true;
+      }
+    });
 
     const moonGeometry = new THREE.SphereGeometry(MOON_RADIUS, 64, 64);
     const moonMaterial = new THREE.MeshStandardMaterial({
       map: slopeTextureRef.current,
       bumpMap: bumpTextureRef.current,
-      bumpScale: 0.05,
-      roughness: 0.82,
-      metalness: 0.08,
+      bumpScale: 0.08,
+      roughness: 0.85,
+      metalness: 0.04,
     });
     const moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
     scene.add(moonMesh);
@@ -906,8 +914,8 @@ export const LunarGlobe3D: React.FC<LunarGlobe3DProps> = ({
       </div>
 
       {/* Interactive Helper Overlay note */}
-      <div className="absolute bottom-16 right-4 pointer-events-none text-[10px] font-mono text-slate-500 bg-space-950/60 px-2 py-1 rounded border border-slate-800/40">
-        Drag: Orbit • Scroll: Zoom • Click Pin: Fly to Site
+      <div className="absolute bottom-16 right-4 pointer-events-none text-[10px] font-mono text-slate-400 bg-space-950/80 px-2.5 py-1 rounded-md border border-slate-800/60 shadow">
+        NASA LRO LROC/LOLA Data • Drag: Orbit • Scroll: Zoom
       </div>
     </div>
   );
