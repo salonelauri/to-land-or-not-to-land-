@@ -480,8 +480,7 @@ Every contribution in this repository adheres to the verification workflow defin
 
 - **Adesh Deshmukh** — Tech Lead & Full-Stack Architect ([@AdeshDeshmukh](https://github.com/AdeshDeshmukh))
 - **Lauri Salonen** — Product, Telemetry & 3D Visualization Lead ([@salonelauri](https://github.com/salonelauri))
-- **Rishika** — Data & UI Design
-- **Ethan** — 3D & Visualization
+- **Akshay** — Moon physics
 
 ### License
 
